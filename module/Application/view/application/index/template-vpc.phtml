@@ -1,0 +1,835 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "Zend Server Cluster template",
+
+  "Parameters": {
+    "VPC" : {
+      "Type" : "AWS::EC2::VPC::Id",
+      "Description" : "VPC in which Zend Server Cluster should be deployed",
+      "ConstraintDescription" : "must be the VPC Id of an existing Virtual Private Cloud."
+    },
+    "Subnets" : {
+      "Type" : "List<AWS::EC2::Subnet::Id>",
+      "Description" : "Subnets in which Zend Server Cluster should run (at least 2 subnets)",
+      "ConstraintDescription" : "must be a list of an existing subnets in the selected Virtual Private Cloud."
+    },
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to Zend Server nodes",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair.",
+      "MinLength": "1"
+    },
+    "ClusterPassword": {
+      "Type": "String",
+      "MinLength": "4",
+      "NoEcho": "true",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "Description": "Zend Server Cluster admin password (min. 4 characters)"
+    },
+    "DatabaseUser": {
+      "Default": "admin",
+      "Type": "String",
+      "Description": "Database admin account name",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DatabasePassword": {
+      "NoEcho": "true",
+      "Type": "String",
+      "Description": "Database admin account password (min. 8 characters)",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "must contain at least 8 alphanumeric characters."
+    },
+    "OperatorEmail": {
+      "Default": "nobody@amazon.com",
+      "Description": "Email address to notify if there are any operational issues",
+      "Type": "String"
+    }
+  },
+
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {"default": "VPC"},
+          "Parameters": ["VPC", "Subnets"]
+        },
+        {
+          "Label": {"default": "Zend Server"},
+          "Parameters": ["ClusterPassword"]
+        },
+        {
+          "Label": {"default": "Zend Server Database"},
+          "Parameters": ["DatabaseUser", "DatabasePassword"]
+        },
+        <?php if ($this->withSsl): ?>
+        {
+          "Label": {"default": "SSL Certificate"},
+          "Parameters": ["SSLCertificateARN"]
+        },
+        <?php endif; ?>
+        {
+          "Label": {"default": "SSH key pair"},
+          "Parameters": ["KeyName"]
+        },
+        {
+          "Label": {"default": "Notifications"},
+          "Parameters": ["OperatorEmail"]
+        }
+      ],
+      "ParameterLabels": {
+        "Subnets": {"default": "VPC Subnets"},
+        <?php if ($this->withSsl): ?>
+        "SSLCertificateARN": {"default": "SSL Certificate ARN"},
+        <?php endif; ?>
+        "DatabaseUser": {"default": "Database username"},
+        "DatabasePassword": {"default": "Database password"},
+        "ClusterPassword": {"default": "Zend Server UI password"},
+        "KeyName": {"default": "SSH Key name"},
+        "OperatorEmail": {"default": "Operator email"}
+      }
+    }
+  },
+
+  "Resources": {
+    "ZendClusterRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [ {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": [ "ec2.amazonaws.com" ]
+            },
+            "Action": [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path": "/",
+        "Policies": [ {
+          "PolicyName": "cloudwatchAdmin",
+          "PolicyDocument": {
+            "Statement": [ {
+              "Effect": "Allow",
+              "Action": [ "cloudwatch:*", "sns:*", "autoscaling:Describe*"],
+              "Resource": "*"
+            } ]
+          }
+        }, {
+          "PolicyName": "ec2TagsAdmin",
+          "PolicyDocument": {
+            "Statement": [ {
+              "Effect": "Allow",
+              "Action": [ "ec2:CreateTags", "ec2:DeleteTags", "ec2:DescribeTags" ],
+              "Resource": "*"
+            } ]
+          }
+        }, {
+          "PolicyName": "s3ReadOnly",
+          "PolicyDocument": {
+            "Statement": [ {
+              "Effect": "Allow",
+              "Action": [ "s3:Get*", "s3:List*" ],
+              "Resource": "*"
+            } ]
+          }
+        } ]
+      }
+    },
+    "ZendClusterProfile" : {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ { "Ref": "ZendClusterRole" } ]
+      }
+    },
+    "WebServerScaleUpPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "WebServerGroup" },
+        "Cooldown" : "60",
+        "ScalingAdjustment" : "1"
+      }
+    },
+    "WebServerScaleDownPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : { "Ref" : "WebServerGroup" },
+        "Cooldown" : "60",
+        "ScalingAdjustment" : "-1"
+      }
+    },
+    "CPUAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "MetricName": "CPUUtilization",
+        "AlarmDescription": "Alarm if CPU too high or metric disappears indicating instance is down",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Threshold": "90",
+        "ComparisonOperator": "GreaterThanThreshold",
+        "Period": "60",
+        "EvaluationPeriods": "2",
+        "AlarmActions": [
+          { "Ref": "AlarmTopic" },
+          { "Ref": "WebServerScaleUpPolicy" }
+        ],
+        "InsufficientDataActions": [
+          { "Ref": "AlarmTopic" }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": { "Ref": "WebServerGroup" }
+          }
+        ]
+      }
+    },
+    "CPUAlarmLow": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Scale-down if CPU < 30% for 2 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "60",
+        "EvaluationPeriods": "2",
+        "Threshold": "30",
+        "ComparisonOperator": "LessThanThreshold",
+        "AlarmActions": [
+          { "Ref": "AlarmTopic" },
+          { "Ref": "WebServerScaleDownPolicy" }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": { "Ref": "WebServerGroup" }
+          }
+        ]
+      }
+    },
+    "TooManyUnhealthyHostsAlarm": {
+      "Properties": {
+        "EvaluationPeriods": "1",
+        "Statistic": "Average",
+        "Threshold": "0",
+        "AlarmDescription": "Alarm if there are too many unhealthy hosts.",
+        "Period": "60",
+        "AlarmActions": [
+          { "Ref": "AlarmTopic" }
+        ],
+        "Namespace": "AWS/ELB",
+        "InsufficientDataActions": [
+          { "Ref": "AlarmTopic" }
+        ],
+        "Dimensions": [
+          {
+            "Name": "LoadBalancerName",
+            "Value": { "Ref": "ElasticLoadBalancer" }
+          }
+        ],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "MetricName": "UnHealthyHostCount"
+      },
+      "Type": "AWS::CloudWatch::Alarm"
+    },
+    "RequestLatencyAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "EvaluationPeriods": "1",
+        "Statistic": "Average",
+        "Threshold": "1.5",
+        "AlarmDescription": "Alarm if there aren't any requests coming through",
+        "Period": "60",
+        "AlarmActions": [
+          { "Ref": "AlarmTopic" }
+        ],
+        "Namespace": "AWS/ELB",
+        "InsufficientDataActions": [
+          { "Ref": "AlarmTopic" }
+        ],
+        "Dimensions": [
+          {
+            "Name": "LoadBalancerName",
+            "Value": { "Ref": "ElasticLoadBalancer" }
+          }
+        ],
+        "ComparisonOperator": "GreaterThanThreshold",
+        "MetricName": "Latency"
+      }
+    },
+
+    "VPCSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "FromPort": "22",
+            "CidrIp": "0.0.0.0/0",
+            "ToPort": "22",
+            "IpProtocol": "tcp"
+          },
+          {
+            "FromPort": "80",
+            "CidrIp": "0.0.0.0/0",
+            "ToPort": "80",
+            "IpProtocol": "tcp"
+          },
+          {
+            "FromPort": "443",
+            "CidrIp": "0.0.0.0/0",
+            "ToPort": "443",
+            "IpProtocol": "tcp"
+          },
+          {
+            "FromPort": "10081",
+            "CidrIp": "0.0.0.0/0",
+            "ToPort": "10081",
+            "IpProtocol": "tcp"
+          },
+          {
+            "FromPort": "10082",
+            "CidrIp": "0.0.0.0/0",
+            "ToPort": "10082",
+            "IpProtocol": "tcp"
+          }
+        ],
+        "GroupDescription": "Zend Cluster Security Group"
+      }
+    },
+    "VPCSecurityGroupIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "tcp",
+        "FromPort": "0",
+        "ToPort": "65535",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "VPCSecurityGroupIngressUDP": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": {
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        },
+        "IpProtocol": "udp",
+        "FromPort": "0",
+        "ToPort": "65535",
+        "SourceSecurityGroupId": {
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        }
+      }
+    },
+    "ElasticLoadBalancer": {
+      "Properties": {
+        "SecurityGroups" : [{ "Ref" : "VPCSecurityGroup" }],
+        "Subnets" : { "Ref" : "Subnets" },
+        "Listeners": [
+          {
+            "InstancePort": "80",
+            "PolicyNames": [
+              "p1"
+            ],
+            "Protocol": "HTTP",
+            "LoadBalancerPort": "80"
+          },
+          {
+            "InstancePort": "10081",
+            "PolicyNames": [
+              "p2"
+            ],
+            "Protocol": "HTTP",
+            "LoadBalancerPort": "10081"
+          },
+          {
+            "InstancePort": "10082",
+            "Protocol": "TCP",
+            "LoadBalancerPort": "10082"
+          }
+        ],
+        "HealthCheck": {
+          "HealthyThreshold": "2",
+          "Timeout": "5",
+          "Interval": "10",
+          "UnhealthyThreshold": "5",
+          "Target": "HTTP:80/"
+        },
+        "Instances" : [ { "Ref" : "CMInstance" } ],
+        "LBCookieStickinessPolicy": [
+          {
+            "CookieExpirationPeriod": "30",
+            "PolicyName": "p1"
+          },
+          {
+            "CookieExpirationPeriod": "604800",
+            "PolicyName": "p2"
+          }
+        ]
+      },
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer"
+    },
+
+    "DBSubnetGroup" : {
+      "Type" : "AWS::RDS::DBSubnetGroup",
+      "Properties" : {
+        "DBSubnetGroupDescription" : "Subnets available for the RDS DB Instance",
+        "SubnetIds" : { "Ref" : "Subnets" }
+      }
+    },
+    "DB": {
+      "Properties": {
+        "DBName": "zend",
+        "Engine": "MySQL",
+        "Port": "3306",
+        "MultiAZ" : true,
+        "MasterUsername": {
+          "Ref": "DatabaseUser"
+        },
+        "DBInstanceClass": "<?=$this->zendDbType?>",
+        "StorageType": "gp2",
+        "DBSubnetGroupName" : { "Ref" : "DBSubnetGroup" },
+        "VPCSecurityGroups": [{ "Ref": "VPCSecurityGroup" }],
+        "AllocatedStorage": "20",
+        "MasterUserPassword": {
+          "Ref": "DatabasePassword"
+        },
+        "Tags": [ { "Key" : "Name", "Value" : "Zend Server Cluster DB" } ]
+      },
+      "DeletionPolicy": "Snapshot",
+      "Type": "AWS::RDS::DBInstance"
+    },
+    "WebServerGroup": {
+      "Properties": {
+        "LoadBalancerNames": [
+          {
+            "Ref": "ElasticLoadBalancer"
+          }
+        ],
+        "LaunchConfigurationName": {
+          "Ref": "LaunchConfig"
+        },
+        "VPCZoneIdentifier" : { "Ref" : "Subnets" },
+        "MinSize": <?= $this->minNodes - 1 ?>,
+        "MaxSize": <?= $this->maxNodes - 1 ?>,
+        "Tags": [
+          {"Key": "ZendClusterName", "Value": { "Ref": "AWS::StackName" }, "PropagateAtLaunch": true}
+        ]
+      },
+      "Type": "AWS::AutoScaling::AutoScalingGroup"
+    },
+    "AlarmTopic": {
+      "Properties": {
+        "Subscription": [
+          {
+            "Endpoint": { "Ref": "OperatorEmail" },
+            "Protocol": "email"
+          }
+        ]
+      },
+      "Type": "AWS::SNS::Topic"
+    },
+    "CMInstance" : {
+      "Properties" : {
+        "Monitoring": true,
+        "IamInstanceProfile": { "Ref": "ZendClusterProfile" },
+        "KeyName" : { "Ref" : "KeyName" },
+        "SecurityGroupIds" : [{
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        }<?=count($this->additionalSGs)==0?'':',"'?><?=implode('","',$this->additionalSGs)?><?=count($this->additionalSGs)==0?'':'"'?>],
+        "SubnetId": { "Fn::Select" : [ "0", {"Ref" : "Subnets"} ] },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "{",
+<?php if ($this->efs !== ""): ?>
+                "\"ZEND_EFS\":",
+                <?=json_encode($this->efs)?>,
+                ",",
+<?php endif; ?>
+                "\"ZEND_ADMIN_PASSWORD\":\"",{ "Ref": "ClusterPassword" },"\",",
+                "\"ZEND_CLUSTER_DB_HOST\":\"",{ "Fn::GetAtt" : ["DB", "Endpoint.Address"] },"\",",
+                "\"ZEND_CLUSTER_DB_USER\":\"",{ "Ref" : "DatabaseUser" },"\",",
+                "\"ZEND_CLUSTER_DB_PASSWORD\":\"",{ "Ref" : "DatabasePassword" },"\",",
+                "\"ZEND_CLUSTER_REGION\":\"",{ "Ref": "AWS::Region" },"\",",
+                "\"ZEND_CLUSTER_NAME\":\"",{ "Ref": "AWS::StackName" },"\"",
+                "}"
+              ]
+            ]
+          }
+        },
+        "InstanceType" : "<?=$this->instanceType?>",
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionDistributionAmi",
+            { "Ref": "AWS::Region" },
+            "<?=$this->phpVersion==7?"zs9":"zs8"?><?=$this->osType?><?=$this->edition?>php<?=$this->phpVersion?>"
+          ]
+        },
+        "Tags": [
+          {"Key": "ZendClusterName", "Value": { "Ref": "AWS::StackName" }}
+        ]
+      },
+      "Type" : "AWS::EC2::Instance"
+    },
+    <?php $i = 1; ?>
+    <?php foreach ($this->resources as $resource): ?>
+    <?php if ($resource['type'] == 'rds'): ?>
+    "<?=$resource['type'].$i++?>": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "Port": "3306",
+        "DBSubnetGroupName" : { "Ref" : "DBSubnetGroup" },
+        "VPCSecurityGroups": [{ "Ref": "VPCSecurityGroup" }],
+        "AllocatedStorage": "<?=$resource['AllocatedStorage']?>",
+        "DBInstanceClass": "<?=$resource['DBInstanceClass']?>",
+        "DBName": "<?=$resource['DBName']?>",
+        "Engine": "<?=$resource['Engine']?>",
+        "EngineVersion": "<?=$resource['EngineVersion']?>",
+        "MasterUsername": "<?=$resource['MasterUsername']?>",
+        "MasterUserPassword": "<?=$resource['MasterUserPassword']?>",
+        "StorageType": "<?=$resource['StorageType']?>",
+        "Tags": [ { "Key" : "Name", "Value" : "<?=$resource['type'].$i?>" } ]
+      }
+    },
+    <?php endif; ?>
+    <?php if ($resource['type'] == 'elasticache'): ?>
+    "CacheSubnetGroupName<?=$i?>": {
+      "Type": "AWS::ElastiCache::SubnetGroup",
+      "Properties": {
+        "Description": "Subnet group for <?=$resource['type'].$i?>",
+        "SubnetIds": { "Ref" : "Subnets" }
+      }
+    },
+    "<?=$resource['type'].$i?>": {
+      "Type": "AWS::ElastiCache::CacheCluster",
+      "Properties": {
+        "CacheNodeType": "<?=$resource['CacheNodeType']?>",
+        "CacheSubnetGroupName": { "Ref" : "CacheSubnetGroupName<?=$i?>" },
+        "Engine": "<?=$resource['Engine']?>",
+        "EngineVersion": "<?=$resource['EngineVersion']?>",
+        "NumCacheNodes": "<?=$resource['NumCacheNodes']?>",
+        "Port": "<?=$resource['Port']?>",
+        "VpcSecurityGroupIds": [{"Fn::GetAtt": [ "VPCSecurityGroup", "GroupId"]}],
+        "Tags": [ { "Key" : "Name", "Value" : "<?=$resource['type'].$i?>" } ]
+      }
+    },
+    <?php $i++; ?>
+    <?php endif; ?>
+    <?php endforeach; ?>
+    "LaunchConfig": {
+      "Properties": {
+        "InstanceMonitoring": true,
+        "IamInstanceProfile": { "Ref": "ZendClusterProfile" },
+        "SecurityGroups": [{
+          "Fn::GetAtt": [
+            "VPCSecurityGroup",
+            "GroupId"
+          ]
+        }<?=count($this->additionalSGs)==0?'':',"'?><?=implode('","',$this->additionalSGs)?><?=count($this->additionalSGs)==0?'':'"'?>],
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionDistributionAmi",
+            { "Ref": "AWS::Region" },
+            "<?=$this->phpVersion==7?"zs9":"zs8"?><?=$this->osType?><?=$this->edition?>php<?=$this->phpVersion?>"
+          ]
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "{",
+<?php if ($this->efs !== ""): ?>
+                "\"ZEND_EFS\":",
+                <?=json_encode($this->efs)?>,
+                ",",
+<?php endif; ?>
+                "\"ZEND_ADMIN_PASSWORD\":\"",{ "Ref": "ClusterPassword" },"\",",
+                "\"ZEND_CLUSTER_DB_HOST\":\"",{ "Fn::GetAtt" : ["DB", "Endpoint.Address"] },"\",",
+                "\"ZEND_CLUSTER_DB_USER\":\"",{ "Ref" : "DatabaseUser" },"\",",
+                "\"ZEND_CLUSTER_DB_PASSWORD\":\"",{ "Ref" : "DatabasePassword" },"\",",
+                "\"ZEND_CLUSTER_REGION\":\"",{ "Ref": "AWS::Region" },"\",",
+                "\"ZEND_CLUSTER_NAME\":\"",{ "Ref": "AWS::StackName" },"\"",
+                "}"
+              ]
+            ]
+          }
+        },
+        "KeyName": { "Ref": "KeyName" },
+        "InstanceType" : "<?=$this->instanceType?>"
+      },
+      "Type": "AWS::AutoScaling::LaunchConfiguration"
+    }
+  },
+
+  "Mappings" : {
+    "RegionDistributionAmi": {
+      "us-east-1": {
+        "zs9ubuntu14entphp7": "ami-9fbb2c88",
+        "zs9ubuntu14devphp7": "ami-ecb92efb",
+        "zs9ubuntu14prophp7": "ami-98bb2c8f",
+        "zs9rhel7devphp7": "ami-85b92e92",
+        "zs9rhel7entphp7": "ami-3db92e2a",
+        "zs9rhel7prophp7": "ami-d0a532c7",
+        "zs8ubuntu14prophp56": "ami-d0a433c7",
+        "zs8ubuntu14entphp56": "ami-ebb82ffc",
+        "zs8rhel7entphp56": "ami-88a5329f",
+        "zs8rhel7devphp56": "ami-60a23577",
+        "zs8rhel7prophp56": "ami-88a6319f",
+        "zs8ubuntu14prophp55": "ami-61a23576",
+        "zs8ubuntu14entplusphp56": "ami-7975eb6e",
+        "zs8centos7entplusphp56": "ami-7575eb62"
+      },
+      "us-west-1": {
+        "zs9ubuntu14entphp7": "ami-70480810",
+        "zs9ubuntu14devphp7": "ami-31470751",
+        "zs9ubuntu14prophp7": "ami-36470756",
+        "zs9rhel7devphp7": "ami-7d48081d",
+        "zs9rhel7entphp7": "ami-414a0a21",
+        "zs9rhel7prophp7": "ami-79480819",
+        "zs8ubuntu14prophp56": "ami-b74808d7",
+        "zs8ubuntu14entphp56": "ami-1d47077d",
+        "zs8rhel7entphp56": "ami-1e47077e",
+        "zs8rhel7devphp56": "ami-014a0a61",
+        "zs8rhel7prophp56": "ami-b24808d2",
+        "zs8ubuntu14prophp55": "ami-4e4a0a2e",
+        "zs8ubuntu14entplusphp56": "ami-ff97d49f",
+        "zs8centos7entplusphp56": "ami-3190d351"
+      },
+      "us-west-2": {
+        "zs9ubuntu14entphp7": "ami-63cb0503",
+        "zs9ubuntu14devphp7": "ami-6ecb050e",
+        "zs9ubuntu14prophp7": "ami-aacf01ca",
+        "zs9rhel7devphp7": "ami-bab37dda",
+        "zs9rhel7entphp7": "ami-adcd03cd",
+        "zs9rhel7prophp7": "ami-48c90728",
+        "zs8ubuntu14prophp56": "ami-49c90729",
+        "zs8ubuntu14entphp56": "ami-ffb37d9f",
+        "zs8rhel7entphp56": "ami-1ccb057c",
+        "zs8rhel7devphp56": "ami-2dcb054d",
+        "zs8rhel7prophp56": "ami-2bca044b",
+        "zs8ubuntu14prophp55": "ami-b4b37dd4",
+        "zs8ubuntu14entplusphp56": "ami-770fc417",
+        "zs8centos7entplusphp56": "ami-c902c9a9"
+      },
+      "eu-west-1": {
+        "zs9ubuntu14entphp7": "ami-b6eb87c5",
+        "zs9ubuntu14devphp7": "ami-4fe5893c",
+        "zs9ubuntu14prophp7": "ami-8de488fe",
+        "zs9rhel7devphp7": "ami-73e68a00",
+        "zs9rhel7entphp7": "ami-dee589ad",
+        "zs9rhel7prophp7": "ami-a2e68ad1",
+        "zs8ubuntu14prophp56": "ami-d7e589a4",
+        "zs8ubuntu14entphp56": "ami-04ea8677",
+        "zs8rhel7entphp56": "ami-39e5894a",
+        "zs8rhel7devphp56": "ami-f3e08c80",
+        "zs8rhel7prophp56": "ami-38e5894b",
+        "zs8ubuntu14prophp55": "ami-63e68a10",
+        "zs8ubuntu14entplusphp56": "ami-5bfc9728",
+        "zs8centos7entplusphp56": "ami-4df3983e"
+      },
+      "eu-central-1": {
+        "zs9ubuntu14entphp7": "ami-9eaa5df1",
+        "zs9ubuntu14devphp7": "ami-7497601b",
+        "zs9ubuntu14prophp7": "ami-e0a95e8f",
+        "zs9rhel7devphp7": "ami-7a976015",
+        "zs9rhel7entphp7": "ami-16a85f79",
+        "zs9rhel7prophp7": "ami-3b966154",
+        "zs8ubuntu14prophp56": "ami-7197601e",
+        "zs8ubuntu14entphp56": "ami-dda95eb2",
+        "zs8rhel7entphp56": "ami-7e966111",
+        "zs8rhel7devphp56": "ami-0ca85f63",
+        "zs8rhel7prophp56": "ami-6197600e",
+        "zs8ubuntu14prophp55": "ami-7297601d",
+        "zs8ubuntu14entplusphp56": "ami-292cda46",
+        "zs8centos7entplusphp56": "ami-2b2cda44"
+      },
+      "ap-southeast-1": {
+        "zs9ubuntu14entphp7": "ami-f12ef192",
+        "zs9ubuntu14devphp7": "ami-f82df29b",
+        "zs9ubuntu14prophp7": "ami-962ef1f5",
+        "zs9rhel7devphp7": "ami-972ef1f4",
+        "zs9rhel7entphp7": "ami-b730efd4",
+        "zs9rhel7prophp7": "ami-882ef1eb",
+        "zs8ubuntu14prophp56": "ami-fe2df29d",
+        "zs8ubuntu14entphp56": "ami-ac30efcf",
+        "zs8rhel7entphp56": "ami-322df251",
+        "zs8rhel7devphp56": "ami-9e2ff0fd",
+        "zs8rhel7prophp56": "ami-332df250",
+        "zs8ubuntu14prophp55": "ami-e82ef18b",
+        "zs8ubuntu14entplusphp56": "ami-b36db3d0",
+        "zs8centos7entplusphp56": "ami-1c6db37f"
+      },
+      "ap-southeast-2": {
+        "zs9ubuntu14entphp7": "ami-96f4c1f5",
+        "zs9ubuntu14devphp7": "ami-d8f5c0bb",
+        "zs9ubuntu14prophp7": "ami-1e0a3f7d",
+        "zs9rhel7devphp7": "ami-55f5c036",
+        "zs9rhel7entphp7": "ami-ccf4c1af",
+        "zs9rhel7prophp7": "ami-2cf7c24f",
+        "zs8ubuntu14prophp56": "ami-99f4c1fa",
+        "zs8ubuntu14entphp56": "ami-5ef4c13d",
+        "zs8rhel7entphp56": "ami-ddf5c0be",
+        "zs8rhel7devphp56": "ami-83f4c1e0",
+        "zs8rhel7prophp56": "ami-0b0a3f68",
+        "zs8ubuntu14prophp55": "ami-dcf5c0bf",
+        "zs8ubuntu14entplusphp56": "ami-dbefdbb8",
+        "zs8centos7entplusphp56": "ami-d8efdbbb"
+      },
+      "ap-northeast-1": {
+        "zs9ubuntu14entphp7": "ami-9b0dc8fa",
+        "zs9ubuntu14devphp7": "ami-6b08cd0a",
+        "zs9ubuntu14prophp7": "ami-1d08cd7c",
+        "zs9rhel7devphp7": "ami-9e00c5ff",
+        "zs9rhel7entphp7": "ami-0a09cc6b",
+        "zs9rhel7prophp7": "ami-1109cc70",
+        "zs8ubuntu14prophp56": "ami-3b0fca5a",
+        "zs8ubuntu14entphp56": "ami-790fca18",
+        "zs8rhel7entphp56": "ami-730ecb12",
+        "zs8rhel7devphp56": "ami-5f09cc3e",
+        "zs8rhel7prophp56": "ami-dc09ccbd",
+        "zs8ubuntu14prophp55": "ami-1f09cc7e",
+        "zs8ubuntu14entplusphp56": "ami-3a39f95b",
+        "zs8centos7entplusphp56": "ami-ef37f78e"
+      },
+      "sa-east-1": {
+        "zs9ubuntu14entphp7": "ami-1542d579",
+        "zs9ubuntu14devphp7": "ami-c444d3a8",
+        "zs9ubuntu14prophp7": "ami-0c43d460",
+        "zs9rhel7devphp7": "ami-a043d4cc",
+        "zs9rhel7entphp7": "ami-a143d4cd",
+        "zs9rhel7prophp7": "ami-6046d10c",
+        "zs8ubuntu14prophp56": "ami-0a43d466",
+        "zs8ubuntu14entphp56": "ami-8e44d3e2",
+        "zs8rhel7entphp56": "ami-0843d464",
+        "zs8rhel7devphp56": "ami-7c41d610",
+        "zs8rhel7prophp56": "ami-5642d53a",
+        "zs8ubuntu14prophp55": "ami-5e45d232",
+        "zs8ubuntu14entplusphp56": "ami-75b52319",
+        "zs8centos7entplusphp56": "ami-02b4226e"
+      },
+      "ap-northeast-2": {
+        "zs9ubuntu14entphp7": "ami-351bd15b",
+        "zs9ubuntu14devphp7": "ami-db1fd5b5",
+        "zs9ubuntu14prophp7": "ami-1005cf7e",
+        "zs9rhel7devphp7": "ami-7b06cc15",
+        "zs9rhel7entphp7": "ami-2e1bd140",
+        "zs9rhel7prophp7": "ami-3318d25d",
+        "zs8ubuntu14prophp56": "ami-3218d25c",
+        "zs8ubuntu14entphp56": "ami-e10cc68f",
+        "zs8rhel7entphp56": "ami-e30cc68d",
+        "zs8rhel7devphp56": "ami-3618d258",
+        "zs8rhel7prophp56": "ami-361bd158",
+        "zs8ubuntu14prophp55": "ami-1705cf79",
+        "zs8ubuntu14entplusphp56": "ami-4258922c",
+        "zs8centos7entplusphp56": "ami-125a907c"
+      }
+    }
+  },
+
+  "Outputs": {
+    "ClusterURL": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            { "Fn::GetAtt": ["ElasticLoadBalancer","DNSName"] },
+            "/"
+          ]
+        ]
+      },
+      "Description" : "URL of the website"
+    },
+    "ZendServerUI": {
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "https://",
+            { "Fn::GetAtt": [ "CMInstance", "PublicIp" ] },
+            ":10082/"
+          ]
+        ]
+      },
+      "Description" : "URL of Zend Server UI"
+    },
+    <?php $i = 0; ?>
+    <?php foreach ($this->resources as $resource): ?>
+    <?php $i++; ?>
+    <?php if ($resource['type'] == 'rds'): ?>
+      "<?=$resource['type'].$i?>Host": {
+        "Value": { "Fn::GetAtt": ["<?=$resource['type'].$i?>", "Endpoint.Address"]},
+        "Description": "<?=$resource['type'].$i?> hostname"
+      },
+      "<?=$resource['type'].$i?>Port": {
+        "Value": { "Fn::GetAtt": ["<?=$resource['type'].$i?>", "Endpoint.Port"]},
+        "Description": "<?=$resource['type'].$i?> port"
+      },
+      "<?=$resource['type'].$i?>User": {
+        "Value": "<?=$resource['MasterUsername']?>",
+        "Description": "<?=$resource['type'].$i?> username"
+      },
+      "<?=$resource['type'].$i?>Password": {
+        "Value": "<?=$resource['MasterUserPassword']?>",
+        "Description": "<?=$resource['type'].$i?> password"
+      },
+    <?php endif; ?>
+    <?php if ($resource['type'] == 'elasticache' && $resource['Engine'] == "memcached"): ?>
+      "<?=$resource['type'].$i?>Host": {
+        "Value": { "Fn::GetAtt": ["<?=$resource['type'].$i?>", "ConfigurationEndpoint.Address"]},
+        "Description": "<?=$resource['type'].$i?> hostname"
+      },
+      "<?=$resource['type'].$i?>Port": {
+        "Value": { "Fn::GetAtt": ["<?=$resource['type'].$i?>", "ConfigurationEndpoint.Port"]},
+        "Description": "<?=$resource['type'].$i?> port"
+      },
+    <?php endif; ?>
+    <?php endforeach; ?>
+    "ZendRDSHost": {
+      "Value": { "Fn::GetAtt" : ["DB", "Endpoint.Address"] },
+      "Description" : "Zend Server Database hostname"
+    },
+    "ZendRDSPort": {
+      "Value": "3306",
+      "Description" : "Zend Server Database port"
+    },
+    "ZendRDSUser": {
+      "Value": { "Ref" : "DatabaseUser" },
+      "Description" : "Zend Server Database user"
+    },
+    "ZendRDSPassword": {
+      "Value": { "Ref" : "DatabasePassword" },
+      "Description" : "Zend Server Database password"
+    }
+  }
+}

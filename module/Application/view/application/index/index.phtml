@@ -1,0 +1,797 @@
+<?php $this->headScript()->appendFile('http://www.zend.com/static-assets/js/jquery.bootstrap-growl.min.js'); ?>
+<?php $this->headScript()->appendFile('http://www.zend.com/static-assets/js/bootstrap-switch.min.js'); ?>
+<?php $this->headLink()->appendStylesheet('http://www.zend.com/static-assets/css/bootstrap-switch.min.css'); ?>
+<style>
+a.deleteResource {
+	color: #fff;
+}
+
+div.checkbox {
+	padding-left: 0px;
+}
+</style>
+
+<div class="container" style="position: relative; top: 15px;">
+	<div class="span-16 last">
+		<div id="title-area">
+			<h1>Run Zend Server on AWS using CloudFormation for Pennies per Hour</h1>
+		</div>
+
+		<div>
+			<p>
+				<a href="http://aws.amazon.com/cloudformation/" target="_blank">AWS
+					CloudFormation</a>&nbsp;provides an easy way to create and manage a
+				collection of Zend Server AWS resources, provisioning and updating
+				them in an orderly and predictable fashion.
+			</p>
+			&nbsp;
+
+			<p>
+				Select your desired Zend Server environment configuration below, and
+				you'll get a pre-configured AWS CloudFormation template that you can
+				use to launch an elastic and scalable Zend Server environment based
+				on the supported&nbsp;<a
+					href="https://aws.amazon.com/marketplace/seller-profile/ref=_ptnr_web_aws_cf_en?ie=UTF8&amp;id=be5eed04-c761-4e81-b278-dca2d20b8482"
+					target="_blank">Zend Server AMIs</a>&nbsp;available through the AWS
+				Marketplace.
+			</p>
+			&nbsp;
+
+			<p>
+				Before launching your configuration you must purchase the
+				required&nbsp;<a
+					href="https://aws.amazon.com/marketplace/seller-profile/ref=_ptnr_web_aws_cf_en?ie=UTF8&amp;id=be5eed04-c761-4e81-b278-dca2d20b8482"
+					target="_blank">Zend Server AMIs</a>. Not sure which edition is
+				right for you?&nbsp;<a
+					href="http://www.zend.com/en/products/php-cloud/aws-editions"
+					taget="_blank">See a comparison of editions.</a>
+			</p>
+		</div>
+	</div>
+
+	<div style="clear: both; height: 25px;"></div>
+
+	<script type="text/javascript">
+  function sendForm() {
+      var map = [{
+          "ubuntu14": {
+              "entplus": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B01JIX2AP2",
+                  "7": ""
+              },
+              "ent": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B00SG8MHWW",
+                  "7": "https://aws.amazon.com/marketplace/pp/B01FEXS3CO"
+              },
+              "pro": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B00SG8MCR2",
+                  "7": "https://aws.amazon.com/marketplace/pp/B01FEXS75W"
+              }
+          },
+          "centos7": {
+              "entplus": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B01JIX27DW",
+                  "7": ""
+              },
+          },
+          "rhel7": {
+              "entplus": {
+                  "56": "",
+                  "7": ""
+              },
+              "ent": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B00SG8YOFK",
+                  "7": "https://aws.amazon.com/marketplace/pp/B01F7ZS41E"
+              },
+              "pro": {
+                  "56": "https://aws.amazon.com/marketplace/pp/B00SG8SDO8",
+                  "7": "https://aws.amazon.com/marketplace/pp/B01F7ZS2BQ"
+              }
+          }
+      }];
+
+      var minNodes = parseInt($("#minNodes").val());
+      var maxNodes = parseInt($("#maxNodes").val());
+      if (minNodes < 2) {
+          $.bootstrapGrowl("Min size must be higher than 2", {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+          $("#minNodes").focus();
+          return false;
+      }
+      if (maxNodes < 2) {
+          $.bootstrapGrowl("Max size must be higher than 2", {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+          $("#maxNodes").focus();
+          return false;
+      }
+      if (minNodes >= maxNodes) {
+          $.bootstrapGrowl("Max size must be higher than initial size", {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+          $("#minNodes").focus();
+          return false;
+      }
+
+      var selectedOs = $("#osType").val().toLowerCase();
+      var selectedEdition = $("#edition").val().toLowerCase();
+      var selectedVersion = $("#phpVersion").val().toLowerCase();
+      var url = "https://aws.amazon.com/marketplace/pp/B00SG8SCLW";
+      $.each(map, function(idx, obj) {
+          $.each(obj, function(idx1, obj1) {
+              if (idx1 == selectedOs) {
+                  $.each(obj1, function(idx2, obj2) {
+                      if (idx2 == selectedEdition) {
+                          $.each(obj2, function(idx3, obj3) {
+                              if (idx3 == selectedVersion) {
+                                  url = obj3;
+                              }
+                          });
+                      }
+                  });
+              }
+          });
+      });
+
+      $("#awsLink").html(url);
+      $("#awsLink").attr("href", url);
+      $("#goCb").attr('checked', false);
+      $("#goButton").addClass('disabled');
+      $("#pop1").modal('show');
+  }
+
+  function cbClicked() {
+      if ($("#goCb").is(":checked")) {
+          $("#goButton").removeClass('disabled');
+      } else {
+          $("#goButton").addClass('disabled');
+      }
+  }
+
+  function go() {
+      var resources = new Array();
+      $("#resources span.label").each(function(i,e){
+          resources.push($(e).data("resource"));
+      });
+      $("#cfResources").val(JSON.stringify(resources));
+
+      if (!$("#zendDbType").is(":visible")) {
+          $("#zendDbType").val($("#zendDbType option[data-default]").val());
+      }
+
+      $("#vpc").prop("disabled", false);
+      $('#cfForm').removeAttr('onsubmit');
+      $('#cfForm').attr('method', 'POST');
+      $("#cfForm").submit();
+      $("#formFeeder").html("processing...");
+      $("#goButton").addClass('disabled');
+  }
+
+  function toggleAdvanced() {
+      $(".advanced").toggle();
+      if ($(".advanced").is(":hidden")) {
+          $(this).text("Show advanced options");
+          $("#zendDbType").val($("#zendDbType option[data-default]").val());
+          $("#resources span").remove();
+          updateVpcEnforce();
+          if (!$("#vpc").prop("disabled")) {
+              $("#vpc").prop("checked", false);
+          }
+      } else {
+          $(this).text("Hide advanced options");
+      }
+      return false;
+  }
+
+  function onRdsEngineChange(e) {
+      var value = $("#rdsEngine").val();
+      $("#rdsEngineVersion option").detach().appendTo("#hidden");
+      $("#hidden option."+value).detach().appendTo("#rdsEngineVersion");
+  }
+
+  function onElasticacheEngineChange(e) {
+      var value = $("#elasticacheEngine").val();
+      $("#elasticacheEngineVersion option").detach().appendTo("#hidden");
+      $("#hidden option."+value).detach().appendTo("#elasticacheEngineVersion");
+  }
+
+  function onResourceModalShow(e) {
+      $("#resourceTab a:first").tab("show");
+      $("select", this).each(function(i,e){
+          if ($(e).data('default') !== undefined) {
+              $(e).val($(e).data("default")).change();
+          }
+      });
+      $("input", this).each(function(i,e){
+          if ($(e).data('default') !== undefined) {
+              $(e).val($(e).data("default")).change();
+          } else {
+              $(e).val("").change();
+          }
+      });
+  }
+
+  function setVpcEnfore(status) {
+      if (status && !$("#vpc").bootstrapSwitch("disabled")) {
+          $("#vpc").data("oldValue", $("#vpc").bootstrapSwitch('state'));
+          $("#vpc").bootstrapSwitch('state', true).bootstrapSwitch('disabled', true);
+      } else if (!status && $("#vpc").bootstrapSwitch("disabled")) {
+          $("#vpc").bootstrapSwitch('disabled', false).bootstrapSwitch('state', $("#vpc").data("oldValue"));
+      }
+  }
+
+  function updateVpcEnforce() {
+      var enforce = false;
+      $("#resources span.label:visible").each(function(i,e){
+          if ($(e).data("resource").vpcEnforce) {
+              enforce = true;
+          }
+      });
+      $("#cfForm select").each(function(i,e){
+          if ($("option:selected", e).data("vpc") !== undefined) {
+              enforce = true;
+          }
+      });
+      setVpcEnfore(enforce);
+  }
+
+  function validateResourceModal() {
+      var inputs = $("#resourceModal input.validatable:visible");
+      var valid = true;
+      inputs.each(function(i,input){
+          if (valid) {
+              if ("max" in input.dataset) {
+                  if (parseInt(input.value, 10) > parseInt(input.dataset.max)) {
+                      valid = false;
+                      var name = $(input).focus().prev().text();
+                      $.bootstrapGrowl("Max size allowed for "+name+" is "+input.dataset.max, {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+                  }
+              }
+              if ("min" in input.dataset) {
+                  if (parseInt(input.value, 10) < parseInt(input.dataset.min)) {
+                      valid = false;
+                      var name = $(input).focus().prev().text();
+                      $.bootstrapGrowl("Min size allowed for "+name+" is "+input.dataset.min, {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+                  }
+              }
+              if (!input.validity.valid) {
+                  valid = false;
+                  var prev = $(input).focus().prev();
+                  if (prev.hasClass('input-group-addon')) {
+                      prev = prev.parents('.form-group').first().children('label');
+                  }
+                  var name = prev.text();
+                  $.bootstrapGrowl("Invalid value for "+name, {'type':"danger", delay:3000, width:'auto', align:'center', allow_dismiss: false});
+              }
+          }
+      });
+      return valid;
+  }
+
+  function saveResource() {
+      var tab = $("#resourceModal div.tab-pane.active");
+      var type = tab.attr("id");
+      var params = {
+          type: type,
+          vpcEnforce: false
+      };
+
+      if (!validateResourceModal()) {
+          return false;
+      }
+
+      $(":input:visible", tab).each(function(i,e){
+          var name = $(e).attr("id").replace(/^[a-z]+/, "");
+          params[name] = $(e).val();
+          if ($(e).data("vpc") !== undefined) {
+              params.vpcEnforce = true;
+          }
+      });
+
+      $("select option:selected", tab).each(function(i,e){
+          if ($(e).data("vpc") !== undefined) {
+              params.vpcEnforce = true;
+          }
+      });
+
+      var newId = $("#resources div").length;
+      var elem = $('<span class="label"></span>').addClass(tab.data("label-type")).text(tab.data("name")+" ").data("resource", params);
+      $('<a href="#" class="deleteResource">&times;</a>').appendTo(elem);
+      $("#resources").append(elem).append(document.createTextNode(" "));
+      $("#resourceModal").modal("hide");
+      updateVpcEnforce();
+  }
+
+  function removeResource(e) {
+      e.preventDefault();
+      $(e.target).parents("span.label:first").remove();
+      updateVpcEnforce();
+      return false;
+  }
+
+  $(document).on('hide.bs.modal','#pop1', function () {
+      $('#cfForm').attr('onsubmit', 'sendForm(); return false;');
+  });
+  $(document).on('click', 'a.deleteResource', removeResource);
+  $(document).on('show.bs.modal', '#resourceModal', onResourceModalShow);
+  $(document).on('click', "#advancedToggleBtn", toggleAdvanced);
+  $(document).ready(function(){
+      $("#rdsEngine").change(onRdsEngineChange).change();
+      $("#elasticacheEngine").change(onElasticacheEngineChange).change();
+      $("#saveResourceButton").click(saveResource);
+      $("#cfForm select").change(updateVpcEnforce);
+      $("[data-vpc]").each(function(i,e){
+          $(e).text($(e).text() + " (requires VPC only template)");
+      });
+      $("input.switchCheckbox").bootstrapSwitch();
+      $("#edition").change(function () {
+          if ($("#edition").val() == 'entplus') {
+              $("#phpVersion").val("56");
+              if ($("#osType").val() == "rhel7") {
+                  $("#osType").val("centos7");
+              }
+          } else if ($("#osType").val() == 'centos7') {
+              $("#osType").val("rhel7");
+          }
+          $("#phpVersion option[value='7']").prop("disabled", $("#edition").val() == "entplus");
+          $("#osType option[value='centos7']").prop("disabled", $("#edition").val() != "entplus");
+          $("#osType option[value='rhel7']").prop("disabled", $("#edition").val() == "entplus");
+      });
+  });
+  </script>
+
+	<h3><?php echo $this->translate("CloudFormation template generation") ;?></h3>
+	<div class="row">
+		<div class="col-sm-6">
+
+			<form id="cfForm" onSubmit="sendForm(); return false;"
+				class="form-horizontal">
+				<input type="hidden" name="generate" value="1" /> <input
+					type="hidden" id="cfResources" name="resources" value="" />
+
+				<div class="form-group">
+					<label for="edition" class="control-label col-md-5"><?php echo $this->translate("Zend Server Edition:"); ?> </label>
+					<div class="col-md-7">
+						<select name="edition" id="edition" class="form-control">
+							<option value="pro"><?php echo $this->translate("Professional"); ?></option>
+							<option value="ent"><?php echo $this->translate("Enterprise"); ?></option>
+							<option value="entplus"><?php echo $this->translate("Enterprise Plus"); ?></option>
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="minNodes" class="control-label col-md-5"><?php echo $this->translate("Initial size (nodes):"); ?> </label>
+					<div class="col-md-7">
+						<input type="text" id="minNodes" name="minNodes" value="2"
+							class="form-control">
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="maxNodes" class="control-label col-md-5"><?php echo $this->translate("Max size (nodes):"); ?></label>
+					<div class="col-md-7">
+						<input type="text" id="maxNodes" name="maxNodes" value="10"
+							class="form-control" />
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="instanceType" class="control-label col-md-5"><?php echo $this->translate("Instance type:"); ?> </label>
+					<div class="col-md-7">
+						<select name="instanceType" id="instanceType" class="form-control">
+							<option value="t2.micro" data-vpc>t2.micro</option>
+							<option value="t2.small" data-vpc>t2.small</option>
+							<option value="t2.medium" data-vpc>t2.medium</option>
+							<option value="m3.medium">m3.medium</option>
+							<option value="m3.large" selected="selected">m3.large</option>
+							<option value="m3.xlarge">m3.xlarge</option>
+							<option value="m3.2xlarge">m3.2xlarge</option>
+							<option value="i2.xlarge">i2.xlarge</option>
+							<option value="i2.2xlarge">i2.2xlarge</option>
+							<option value="c3.large">c3.large</option>
+							<option value="c3.xlarge">c3.xlarge</option>
+							<option value="c3.2xlarge">c3.2xlarge</option>
+							<option value="r3.large">r3.large</option>
+							<option value="r3.xlarge">r3.xlarge</option>
+							<option value="r3.2xlarge">r3.2xlarge</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="phpVersion" class="control-label col-md-5">PHP Version:</label>
+					<div class="col-md-7">
+						<select name="phpVersion" id="phpVersion" class="form-control">
+							<option value="7">7</option>
+							<option value="56">5.6</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<label for="osType" class="control-label col-md-5"><?php echo $this->translate("OS:"); ?></label>
+					<div class="col-md-7">
+						<select name="osType" id="osType" class="form-control">
+							<option value="ubuntu14"><?php echo $this->translate("Ubuntu"); ?></option>
+							<option value="rhel7"><?php echo $this->translate("RHEL"); ?></option>
+							<option value="centos7" disabled><?php echo $this->translate("CentOS"); ?></option>
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group advanced" style="display: none;">
+					<label for="zendDbType" class="control-label col-md-5"><?php echo $this->translate("Zend Server DB type:"); ?></label>
+					<div class="col-md-7">
+						<select name="zendDbType" id="zendDbType" class="form-control">
+							<option value="db.t1.micro">db.t1.micro</option>
+							<option value="db.m1.small">db.m1.small</option>
+							<option value="db.m1.medium">db.m1.medium</option>
+							<option value="db.m1.large">db.m1.large</option>
+							<option value="db.m1.xlarge">db.m1.xlarge</option>
+							<option value="db.m2.xlarge">db.m2.xlarge</option>
+							<option value="db.m2.2xlarge">db.m2.2xlarge</option>
+							<option value="db.m2.4xlarge">db.m2.4xlarge</option>
+							<option value="db.m3.medium" selected="selected" data-default>db.m3.medium</option>
+							<option value="db.m3.large">db.m3.large</option>
+							<option value="db.m3.xlarge">db.m3.xlarge</option>
+							<option value="db.m3.2xlarge">db.m3.2xlarge</option>
+							<option value="db.r3.large">db.r3.large</option>
+							<option value="db.r3.xlarge">db.r3.xlarge</option>
+							<option value="db.r3.2xlarge">db.r3.2xlarge</option>
+							<option value="db.r3.4xlarge">db.r3.4xlarge</option>
+							<option value="db.r3.8xlarge">db.r3.8xlarge</option>
+							<option value="db.t2.micro" data-vpc>db.t2.micro</option>
+							<option value="db.t2.small" data-vpc>db.t2.small</option>
+							<option value="db.t2.medium" data-vpc>db.t2.medium</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="form-group advanced" style="display: none;">
+					<label for="vpc" class="control-label col-sm-5"><?php echo $this->translate("VPC only template:"); ?></label>
+					<div class="col-md-7">
+						<div class="checkbox">
+							<label><input checked class="switchCheckbox" id="vpc" name="vpc"
+								type="checkbox" value="1" checked data-on-text="Yes"
+								data-off-text="No" /></label>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-group advanced" style="display: none;">
+					<label for="resources" class="control-label col-sm-5"><?php echo $this->translate("Resources:"); ?></label>
+					<div class="col-sm-7">
+						<button class="btn btn-default advanced" type="button"
+							data-toggle="modal" data-target="#resourceModal"
+							style="display: none;"><?php echo $this->translate("Add resource"); ?></button>
+					</div>
+				</div>
+
+				<div class="form-group advanced" style="display: none;">
+					<label for="resources" class="control-label col-sm-5"></label>
+					<div class="col-sm-7">
+						<div id="resources"></div>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<div class="col-md-7 col-md-offset-5">
+						<span>[<a class="" href="#" id="advancedToggleBtn">Show advanced
+								options</a>]
+						</span>
+					</div>
+				</div>
+
+				<div class="form-group">
+					<div class="col-md-12 text-center" style="padding-top: 10px;">
+						<button class="btn btn-primary" type="submit"><?php echo $this->translate("Generate!"); ?></button>
+					</div>
+				</div>
+			</form>
+		</div>
+		<div class="col-sm-6 text-right">
+			<img src="http://static.zend.com/cmsdata/aws/cloudformation1.png" />
+		</div>
+	</div>
+</div>
+<br />
+<br />
+<br />
+
+<!-- Start of start up license form -->
+<div class="modal fade" id="pop1" tabindex="-1" role="dialog"
+	aria-labelledby="myModalLabel" aria-hidden="true">
+	<div id="pop1d" class="modal-dialog modal-main-cont">
+		<div class="modal-content">
+			<div class="modal-header header-lictype">
+				<button type="button" class="close" data-dismiss="modal"
+					aria-hidden="true">&times;</button>
+				<div class="modal-title-div">
+					<h4 class="modal-title" id="myModalLabel">
+						<span class="form-title"><?php echo $this->translate("CloudFormation Template Generation"); ?></span>
+					</h4>
+				</div>
+			</div>
+			<div class="border-div"></div>
+			<div class="modal-body" style="height: 300px;">
+				Just one more step to go! To use this CloudFormation template, you
+				will need to first subscribe to the AMI in the AWS Marketplace.<br />
+				<br /> To do this, click this link: <a target="_blank" id="awsLink"
+					href="#"></a> <br /> <br /> <br /> <input onClick="cbClicked();"
+					id="goCb" type="checkbox">
+				<div style="padding-left: 5px; display: inline-block;"
+					onClick="$('#goCb').click();">I&#39;m subscribed to the AMI in the
+					AWS Marketplace</div>
+				<br /> <br />
+				<button onClick="go();" class="btn btn-primary" id="goButton">Go!</button>
+				<div id="formFeeder"></div>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- End of start up license form -->
+
+<!-- Start of resource modal -->
+<div class="modal fade" id="resourceModal" tabindex="-1" role="dialog"
+	aria-labelledby="myModalLabel" aria-hidden="true">
+	<div class="modal-dialog modal-lg">
+		<div class="modal-content">
+			<div class="modal-header">
+				<button type="button" class="close" data-dismiss="modal"
+					aria-hidden="true">&times;</button>
+				<h4 class="modal-title">Resource details</h4>
+			</div>
+			<div class="modal-body">
+
+				<select id="hidden" class="hidden">
+					<option class="MySQL" value="5.6.22">5.6.22</option>
+					<option class="MySQL" value="5.6.21b">5.6.21b</option>
+					<option class="MySQL" value="5.6.21">5.6.21</option>
+					<option class="MySQL" value="5.6.19b">5.6.19b</option>
+					<option class="MySQL" value="5.6.19a">5.6.19a</option>
+					<option class="MySQL" value="5.5.41">5.5.41</option>
+					<option class="MySQL" value="5.5.40b">5.5.40b</option>
+					<option class="oracle-se1" value="12.1.0.1.v1">12.1.0.1.v1</option>
+					<option class="oracle-se" value="12.1.0.1.v1">12.1.0.1.v1</option>
+					<option class="oracle-ee" value="12.1.0.1.v1">12.1.0.1.v1</option>
+					<option class="oracle-ee" value="11.2.0.3.v1">11.2.0.3.v1</option>
+					<option class="oracle-ee" value="11.2.0.3.v2">11.2.0.3.v2</option>
+					<option class="oracle-ee" value="11.2.0.4.v1">11.2.0.4.v1</option>
+					<option class="oracle-ee" value="11.2.0.4.v3">11.2.0.4.v3</option>
+					<option class="postgres" value="9.4.1">9.4.1</option>
+					<option class="postgres" value="9.3.6">9.3.6</option>
+					<option class="postgres" value="9.3.5">9.3.5</option>
+					<option class="postgres" value="9.3.3">9.3.3</option>
+
+					<option class="memcached" value="1.4.14">1.4.14</option>
+					<option class="memcached" value="1.4.5">1.4.5</option>
+					<option class="redis" value="2.8.19">2.8.19</option>
+					<option class="redis" value="2.8.6">2.8.6</option>
+					<option class="redis" value="2.6.13">2.6.13</option>
+				</select>
+
+				<ul class="nav nav-tabs" role="tablist" id="resourceTab"
+					style="margin-bottom: 15px;">
+					<li role="presentation" class="active"><a href="#rds"
+						aria-controls="rds" role="tab" data-toggle="tab">RDS</a></li>
+					<li role="presentation"><a href="#elasticache"
+						aria-controls="elasticache" role="tab" data-toggle="tab">Elasticache</a></li>
+					<li role="presentation"><a href="#efs" aria-controls="efs"
+						role="tab" data-toggle="tab">EFS</a></li>
+				</ul>
+
+				<div class="tab-content">
+					<div role="tabpanel" class="tab-pane active"
+						data-label-type="label-primary" id="rds" data-name="RDS">
+						<p>AWS RDS gives you access to fully managed database server. You
+							can add additional RDS instances for your applications or other
+							needs.</p>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="rdsDBInstanceClass">Instance class</label> <select
+										class="form-control" id="rdsDBInstanceClass"
+										data-default="db.m3.large">
+										<option value="db.t1.micro">db.t1.micro</option>
+										<option value="db.m1.small">db.m1.small</option>
+										<option value="db.m1.medium">db.m1.medium</option>
+										<option value="db.m1.large">db.m1.large</option>
+										<option value="db.m1.xlarge">db.m1.xlarge</option>
+										<option value="db.m2.xlarge">db.m2.xlarge</option>
+										<option value="db.m2.2xlarge">db.m2.2xlarge</option>
+										<option value="db.m2.4xlarge">db.m2.4xlarge</option>
+										<option value="db.m3.medium">db.m3.medium</option>
+										<option value="db.m3.large" selected="selected">db.m3.large</option>
+										<option value="db.m3.xlarge">db.m3.xlarge</option>
+										<option value="db.m3.2xlarge">db.m3.2xlarge</option>
+										<option value="db.r3.large">db.r3.large</option>
+										<option value="db.r3.xlarge">db.r3.xlarge</option>
+										<option value="db.r3.2xlarge">db.r3.2xlarge</option>
+										<option value="db.r3.4xlarge">db.r3.4xlarge</option>
+										<option value="db.r3.8xlarge">db.r3.8xlarge</option>
+										<option value="db.t2.micro" data-vpc>db.t2.micro</option>
+										<option value="db.t2.small" data-vpc>db.t2.small</option>
+										<option value="db.t2.medium" data-vpc>db.t2.medium</option>
+									</select>
+								</div>
+
+								<div class="form-group">
+									<label for="rdsEngine">Engine</label> <select
+										class="form-control" id="rdsEngine" data-default="MySQL">
+										<option value="MySQL">MySQL</option>
+										<option value="oracle-se1">Oracle Database Standard Edition
+											One</option>
+										<option value="oracle-se">Oracle Database Standard Edition</option>
+										<option value="oracle-ee">Oracle Database Enterprise Edition</option>
+										<option value="postgres">PostgreSQL</option>
+									</select>
+								</div>
+
+								<div class="form-group">
+									<label for="rdsEngineVersion">Engine version</label> <select
+										class="form-control" id="rdsEngineVersion"></select>
+								</div>
+
+								<div class="form-group">
+									<label for="rdsStorageType">Storage type</label> <select
+										class="form-control" id="rdsStorageType"
+										data-default="standard">
+										<option value="standard">Magnetic</option>
+										<option value="gp2" data-vpc>General Purpose (SSD)</option>
+									</select>
+								</div>
+							</div>
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="rdsAllocatedStorage">Allocated storage (GB)</label>
+									<input type="text" class="form-control validatable"
+										id="rdsAllocatedStorage" required pattern="\d+" data-min="5"
+										data-max="3072">
+								</div>
+
+								<div class="form-group">
+									<label for="rdsDBName">Database name <small>(optional)</small></label>
+									<input type="text" class="form-control validatable"
+										id="rdsDBName" pattern="\w+">
+								</div>
+
+								<div class="form-group">
+									<label for="rdsMasterUsername">Master username</label> <input
+										type="text" class="form-control validatable"
+										id="rdsMasterUsername" required pattern="[a-zA-Z0-9._-]+">
+								</div>
+
+								<div class="form-group">
+									<label for="rdsMasterUserPassword">Master user password <small>(minimum
+											8 characters)</small></label> <input type="text"
+										class="form-control validatable" id="rdsMasterUserPassword"
+										required pattern="\w{8,}">
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div role="tabpanel" class="tab-pane" id="elasticache"
+						data-label-type="label-success" data-name="ElastiCache">
+						<p>ElastiCache is a web service that makes it easy to deploy,
+							operate, and scale an in-memory cache in the cloud. If your
+							application requires one, you can add an ElastiCache cluster
+							here.</p>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="elasticacheEngine">Engine</label> <select
+										class="form-control" id="elasticacheEngine"
+										data-default="memcached">
+										<option value="memcached">memcached</option>
+										<option value="redis">redis</option>
+									</select>
+								</div>
+
+								<div class="form-group">
+									<label for="elasticacheEngineVersion">Engine version</label> <select
+										class="form-control" id="elasticacheEngineVersion"></select>
+								</div>
+
+								<div class="form-group">
+									<label for="elasticacheCacheNodeType">Cache node type</label> <select
+										class="form-control" id="elasticacheCacheNodeType">
+										<optoup label="Current generation">
+										<option value="cache.t2.micro" data-vpc>cache.t2.micro</option>
+										<option value="cache.t2.small" data-vpc>cache.t2.small</option>
+										<option value="cache.t2.medium" data-vpc>cache.t2.medium</option>
+										<option value="cache.m3.medium">cache.m3.medium</option>
+										<option value="cache.m3.large">cache.m3.large</option>
+										<option value="cache.m3.xlarge">cache.m3.xlarge</option>
+										<option value="cache.m3.2xlarge">cache.m3.2xlarge</option>
+										<option value="cache.r3.large">cache.r3.large</option>
+										<option value="cache.r3.xlarge">cache.r3.xlarge</option>
+										<option value="cache.r3.2xlarge">cache.r3.2xlarge</option>
+										<option value="cache.r3.4xlarge">cache.r3.4xlarge</option>
+										<option value="cache.r3.8xlarge">cache.r3.8xlarge</option>
+										</optoup>
+										<optoup label="Previous generation">
+										<option value="cache.t1.micro">cache.t1.micro</option>
+										<option value="cache.m1.small">cache.m1.small</option>
+										<option value="cache.m1.medium">cache.m1.medium</option>
+										<option value="cache.m1.large">cache.m1.large</option>
+										<option value="cache.m1.xlarge">cache.m1.xlarge</option>
+										<option value="cache.c1.xlarge">cache.c1.xlarge</option>
+										<option value="cache.m2.xlarge">cache.m2.xlarge</option>
+										<option value="cache.m2.2xlarge">cache.m2.2xlarge</option>
+										<option value="cache.m2.4xlarge">cache.m2.4xlarge</option>
+										</optoup>
+									</select>
+								</div>
+							</div>
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="elasticacheNumCacheNodes">Num cache nodes</label> <input
+										type="text" class="form-control validatable"
+										id="elasticacheNumCacheNodes" required pattern="\d+">
+								</div>
+
+								<div class="form-group">
+									<label for="elasticachePort">Port</label> <input type="text"
+										class="form-control validatable" id="elasticachePort" required
+										pattern="\d+" data-max="65535">
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div role="tabpanel" class="tab-pane" id="efs"
+						data-label-type="label-success" data-name="EFS">
+						<p>Elastic FileSystem (EFS) is a filesystem service provided by
+							AWS. It can be mounted on multiple servers to share files between
+							them. EFS is accessible using NFS v4.1 protocol.</p>
+						<p>
+							<b>Note:</b> You must have an existing EFS filesystem with
+							mountpoints added in relevant VPC Subnets to be able to mount it.
+							For more information about creatint EFS filesystem read <a
+								href="https://docs.aws.amazon.com/efs/latest/ug/creating-using-create-fs.html"
+								target="_blank">here</a>.
+						</p>
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="efsId">EFS Filesystem ID</label> <input type="text"
+										class="form-control validatable" id="efsId" required
+										pattern="fs-[a-fA-F0-9]{8}" data-vpc>
+								</div>
+							</div>
+
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="efsMountpoint">Mountpoint</label>
+									<div class="input-group">
+										<span class="input-group-addon">/mnt/</span> <input
+											type="text" class="form-control validatable"
+											id="efsMountpoint" required pattern="[a-zA-Z0-9_-]+">
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="row">
+							<div class="col-md-6">
+								<div class="form-group">
+									<label for="efsSg">EFS Security Group ID</label> <input
+										type="text" class="form-control validatable" id="efsSg"
+										required pattern="sg-[a-fA-F0-9]{8}"> <span class="help-block">You
+										have to specify ID of security group that EFS is attached to.
+										All Zend Server nodes started using CF template will than
+										automatically be attached to this security group to enable
+										mounting of EFS.</span>
+								</div>
+							</div>
+						</div>
+					</div>
+
+				</div>
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+				<button type="button" class="btn btn-primary"
+					id="saveResourceButton">Save</button>
+			</div>
+		</div>
+	</div>
+</div>
+<!-- End of resource modal -->

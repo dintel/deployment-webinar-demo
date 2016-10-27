@@ -1,0 +1,96 @@
+<?php
+if (count($this->errors) != 0) {
+    foreach ($this->errors as $error) {
+        echo $error . '<br />';
+    }
+    ?>
+<a href="javascript:window.history.back();">Back to form</a>
+<?php
+} else {
+    ?>
+<script type="text/javascript">
+	function redirectToAws()
+	{
+		if(window.location.href.match('iframe=zend')!=null){
+			window.open('https://console.aws.amazon.com/cloudformation/home?region='+ jQuery("#regionSelect").val() +'#cstack=sn~ZendCluster|turl~<?=$this->templateURL?>');
+		}else{
+			window.location.href='https://console.aws.amazon.com/cloudformation/home?region='+ jQuery("#regionSelect").val() +'#cstack=sn~ZendCluster|turl~<?=$this->templateURL?>';
+		}
+	}
+	</script>
+<div id="title-wrapper">
+	<div id="title-area">
+		<div class="title">
+			<h1>Your CloudFormation Template is Ready</h1>
+		</div>
+	</div>
+
+	<?php
+    // to use a page without the tabs just delete the div's content
+    // (do not delete the "tabs" div just its' content)
+    ?>
+	<div id="tabs"></div>
+</div>
+
+<div class="container content"> <?php // general wrapper ?>
+
+	<?php
+    /*
+     * Example for a single column layout
+     * You can use spans to divide the page anyway you want.
+     * in a total page width there are 24 spans.
+     * (so i.e. a 4 column layout would consist of 4 spans of 6's.)
+     */
+    ?>
+		<div class="span-16 last">
+
+		Your template is ready.<br /> To use this template you will need an
+		active AWS account and your <a
+			href="https://aws-portal.amazon.com/gp/aws/developer/account/index.html?action=access-key#keypair_block"
+			target="_blank">EC2 KeyPair</a> to enable SSH access to your cluster.
+		<br /> <br />
+		<p style="color: red;">
+			Before launching your configuration you must purchase the
+			required&nbsp;<a
+				href="https://aws.amazon.com/marketplace/seller-profile/ref=_ptnr_web_aws_cf_en?ie=UTF8&amp;id=be5eed04-c761-4e81-b278-dca2d20b8482"
+				target="_blank">Zend Server AMIs</a>. Not sure which edition is
+			right for you?<br /> <a
+				href="http://www.zend.com/en/products/php-cloud/aws-editions"
+				taget="_blank">See a comparison of editions.</a>
+		</p>
+		<br /> Please choose one of the options below: <br /> <br />
+
+		<div style="float: left; margin-top: 5px;">
+			<button type="button"
+				ONCLICK="window.location.href='<?=$this->templateURL?>'"
+				style="width: 200px;">Download</button>
+		</div>
+		<div style="width: 400px; float: left; padding-left: 15px;">Download
+			your CloudFormation template. You can edit the template and run it in
+			AWS anytime.</div>
+
+		<div style="clear: both; height: 20px;"></div>
+		<br />
+		<div style="float: left; margin-top: 5px;">
+			<select id="regionSelect" name="regionSelect"
+				style="min-width: 200px; width: 200px;">
+				<option value="us-east-1">US East (N. Virginia)</option>
+				<option value="us-west-2">US West (Oregon)</option>
+				<option value="us-west-1">US West (N. California)</option>
+				<option value="eu-west-1">EU (Ireland)</option>
+				<option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+				<option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+				<option value="ap-southeast-2">Asia Pacific (Sydney)</option>
+				<option value="sa-east-1">South America (São Paulo)</option>
+			</select> <br />
+			<button type="button" ONCLICK="redirectToAws();"
+				style="width: 200px;">Deploy on AWS</button>
+		</div>
+		<div style="width: 400px; float: left; padding-left: 15px;">Deploy
+			your AWS CloudFormation cluster directly from this page.</div>
+
+	</div>
+
+</div>
+<?php
+}

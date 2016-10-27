@@ -1,0 +1,84 @@
+<?php echo $this->doctype(); ?>
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CloudFormation template generator</title>
+        <?php
+
+        echo $this->headMeta()
+            ->appendName('viewport', 'width=device-width, initial-scale=1.0')
+            ->appendHttpEquiv('X-UA-Compatible', 'IE=edge')?>
+
+<script
+	src="http://static.zend.com/cmsdata/static-assets/js/jquery-1.11.0.min.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/js/jquery-ui/js/jquery-ui-1.10.4.custom.min.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/js/bootstrap.min.js"></script>
+<script src="http://static.zend.com/cmsdata/static-assets/js/main.js"></script>
+<script src="http://static.zend.com/cmsdata/static-assets/js/menu.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/js/galleryslide.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/lightbox-2.7.1/js/lightbox.min.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/fancyapps-fancyBox-18d1712/jquery.fancybox.pack.js"></script>
+<script
+	src="http://static.zend.com/cmsdata/static-assets/fancyapps-fancyBox-18d1712/helpers/jquery.fancybox-media.js?v=1.0.6"></script>
+
+<link
+	href="http://static.zend.com/cmsdata/static-assets/fancyapps-fancyBox-18d1712/jquery.fancybox.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<link
+	href="http://static.zend.com/cmsdata/static-assets/lightbox-2.7.1/css/lightbox.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<link
+	href="http://static.zend.com/cmsdata/static-assets/css/vendor/bootstrap.min.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<link href="http://static.zend.com/cmsdata/static-assets/css/main.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<link
+	href="http://www.zend.com/static-assets/css/vendor/font-awesome/css/font-awesome.min.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<link
+	href='//fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700,400italic,700italic'
+	rel='stylesheet' type='text/css'></link>
+<link
+	href="http://www.zend.com/static-assets/css/bootstrap-switch.min.css"
+	media="screen" rel="stylesheet" type="text/css"></link>
+<script type="text/javascript"
+	src="http://www.zend.com/static-assets/js/jquery.bootstrap-growl.min.js"></script>
+<script type="text/javascript"
+	src="http://www.zend.com/static-assets/js/bootstrap-switch.min.js"></script>
+
+<!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+		  <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+		  <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+		<![endif]-->
+
+<script type="text/javascript">
+			$('.fancybox-media')
+				.attr('rel', 'media-gallery')
+				.fancybox({
+					openEffect : 'none',
+					closeEffect : 'none',
+					prevEffect : 'none',
+					nextEffect : 'none',
+
+					arrows : false,
+					helpers : {
+						media : {},
+						buttons : {}
+					}
+				});
+		</script>
+
+</head>
+<body>
+        <?php echo $this->content; ?>
+        <?php echo $this->inlineScript()?>
+    </body>
+</html>
