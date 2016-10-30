@@ -1,10 +1,11 @@
 {
-  "name" : "zendframework/skeleton-application",
+  "name" : "webinar-demo/demo",
   "description" : "Skeleton Application for ZF2",
   "require" : {
     "php" : "~7.0",
     "zendframework/zendframework" : "~2.4",
-    "aws/aws-sdk-php" : "~3."
+    "aws/aws-sdk-php" : "~3.",
+    "dintel/php-github-webhook" : "~0.1"
   },
   "license" : "BSD-3-Clause",
   "keywords" : [ "framework", "zf2" ],
